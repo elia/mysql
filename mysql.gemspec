@@ -2,15 +2,16 @@
 rubygems_version: 0.8.11
 specification_version: 1
 name: mysql
+author: "TOMITA Masahiro, Elia Schito"
 version: !ruby/object:Gem::Version 
-  version: "2.7"
+  version: "2.7.1"
 date: 2005-10-10 00:00:00 +02:00
 summary: MySQL/Ruby provides the same functions for Ruby programs that the MySQL C API provides for C programs.
 require_paths: 
   - lib
 email: tommy@tmtm.org
 homepage: http://www.tmtm.org/en/mysql/ruby/
-autorequire: mysql
+# autorequire: mysql
 has_rdoc: false
 required_ruby_version: !ruby/object:Gem::Version::Requirement 
   requirements: 
