@@ -14,6 +14,8 @@ Install the gem(s):
   sudo gem install elia-mysql
 
 
+Credits
+-------
 
 Author of the C wrapper for Mysql: 
   TOMITA Masahiro, released under the Ruby license.
