@@ -1,5 +1,5 @@
 #!/usr/local/bin/ruby
-# $Id: test.rb,v 1.16 2005/08/21 15:12:34 tommy Exp $
+# $Id: test.rb 218 2008-06-17 05:36:44Z tommy $
 
 require "test/unit"
 require "./mysql.o"
@@ -16,7 +16,7 @@ class TC_Mysql < Test::Unit::TestCase
   end
 
   def test_version()
-    assert_equal(20700, Mysql::VERSION)
+    assert_equal(20800, Mysql::VERSION)
   end
 
   def test_init()
@@ -48,11 +48,11 @@ class TC_Mysql < Test::Unit::TestCase
   end
 
   def test_get_client_info()
-    assert_match(/^\d.\d+.\d+(-.*)?$/, Mysql.get_client_info())
+    assert_match(/^\d.\d+.\d+[a-z]?(-.*)?$/, Mysql.get_client_info())
   end
 
   def test_client_info()
-    assert_match(/^\d.\d+.\d+(-.*)?$/, Mysql.client_info())
+    assert_match(/^\d.\d+.\d+[a-z]?(-.*)?$/, Mysql.client_info())
   end
 
   def test_options()
@@ -103,7 +103,7 @@ class TC_Mysql2 < Test::Unit::TestCase
     @m = Mysql.new(@host, @user, @pass, @db, @port, @sock, @flag)
   end
   def teardown()
-    @m.close
+    @m.close if @m
   end
 
   def test_affected_rows()
@@ -141,6 +141,41 @@ class TC_Mysql2 < Test::Unit::TestCase
       assert_equal(false, @m.next_result)
     end
   end if Mysql.client_version >= 40100
+
+  def test_query_with_block()
+    if @m.server_version >= 40100 then
+      @m.set_server_option(Mysql::OPTION_MULTI_STATEMENTS_ON)
+      expect = [["1","2","3"], ["4","5","6"]]
+      @m.query("select 1,2,3; select 4,5,6") {|res|
+        assert_equal(1, res.num_rows)
+        assert_equal(expect.shift, res.fetch_row)
+      }
+      assert(expect.empty?)
+      expect = [["1","2","3"], ["4","5","6"]]
+      assert_raises(Mysql::Error) {
+        @m.query("select 1,2,3; hoge; select 4,5,6") {|res|
+          assert_equal(1, res.num_rows)
+          assert_equal(expect.shift, res.fetch_row)
+        }
+      }
+      assert_equal(1, expect.size)
+      expect = [["1","2","3"], ["4","5","6"]]
+      assert_raises(Mysql::Error) {
+        @m.query("select 1,2,3; select 4,5,6; hoge") {|res|
+          assert_equal(1, res.num_rows)
+          assert_equal(expect.shift, res.fetch_row)
+        }
+      }
+      assert(expect.empty?)
+    end
+  end
+
+  def test_query_with_block_single()
+    @m.query("select 1,2,3") {|res|
+      assert_equal(1, res.num_rows)
+      assert_equal(["1","2","3"], res.fetch_row)
+    }
+  end
 
   def test_set_server_option()
     if @m.server_version >= 40101 then
@@ -244,7 +279,7 @@ class TC_MysqlRes < Test::Unit::TestCase
     @res.data_seek(1)
     assert_equal(["2","defg"], @res.fetch_row)
   end
-  
+
   def test_row_seek()
     assert_equal(["1","abc"], @res.fetch_row)
     pos = @res.row_tell
@@ -457,7 +492,7 @@ class TC_MysqlStmt2 < Test::Unit::TestCase
   end
 =end
 
-  def test_bind_result_nil() 
+  def test_bind_result_nil()
     if @m.server_version >= 40100 then
       @m.query("create temporary table t (i int, c char(10), d double, t datetime)")
       @m.query("insert into t values (123, '9abcdefg', 1.2345, 20050802235011)")
@@ -510,7 +545,7 @@ class TC_MysqlStmt2 < Test::Unit::TestCase
       @s.execute
       a = @s.fetch
       if Mysql.client_version < 50000 then
-        assert_equal([123, 9, 1, 2005], a) 
+        assert_equal([123, 9, 1, 2005], a)
       else
         assert_equal([123, 9, 1, 20050802235011.0], a)
       end
@@ -654,11 +689,47 @@ class TC_MysqlStmt2 < Test::Unit::TestCase
     end
   end
 
+  def test_execute5()
+    if @m.server_version >= 40100 then
+      [30, 31, 32, 62, 63].each do |i|
+        v, = @m.prepare("select cast(? as signed)").execute(2**i-1).fetch
+        assert_equal(2**i-1, v)
+        v, = @m.prepare("select cast(? as signed)").execute(-(2**i)).fetch
+        assert_equal(-(2**i), v)
+      end
+    end
+  end
+
   def test_fetch()
     if @m.server_version >= 40100 then
       @s.prepare("select 123, 'abc', null")
       @s.execute()
       assert_equal([123, "abc", nil], @s.fetch())
+    end
+  end
+
+  def test_fetch_bit()
+    if @m.client_version >= 50003 and @m.server_version >= 50003 then
+      @m.query("create temporary table t (i bit(8))")
+      @m.query("insert into t values (0),(-1),(127),(-128),(255),(-255),(256)")
+      @s.prepare("select i from t")
+      @s.execute
+      assert_equal(["\x00"], @s.fetch)
+      assert_equal(["\xff"], @s.fetch)
+      assert_equal(["\x7f"], @s.fetch)
+      assert_equal(["\xff"], @s.fetch)
+      assert_equal(["\xff"], @s.fetch)
+      assert_equal(["\xff"], @s.fetch)
+      assert_equal(["\xff"], @s.fetch)
+      @m.query("create temporary table t2 (i bit(64))")
+      @m.query("insert into t2 values (0),(-1),(4294967296),(18446744073709551615),(18446744073709551616)")
+      @s.prepare("select i from t2")
+      @s.execute
+      assert_equal(["\x00\x00\x00\x00\x00\x00\x00\x00"], @s.fetch)
+      assert_equal(["\xff\xff\xff\xff\xff\xff\xff\xff"], @s.fetch)
+      assert_equal(["\x00\x00\x00\x01\x00\x00\x00\x00"], @s.fetch)
+      assert_equal(["\xff\xff\xff\xff\xff\xff\xff\xff"], @s.fetch)
+      assert_equal(["\xff\xff\xff\xff\xff\xff\xff\xff"], @s.fetch)
     end
   end
 
@@ -796,7 +867,11 @@ class TC_MysqlStmt2 < Test::Unit::TestCase
       assert_equal([-1], @s.fetch)
       assert_equal([9223372036854775807], @s.fetch)
       assert_equal([-9223372036854775808], @s.fetch)
-      assert_equal([-1], @s.fetch)                       # MySQL problem
+      if @m.server_version >= 50000 then
+        assert_equal([9223372036854775807], @s.fetch)
+      else
+        assert_equal([-1], @s.fetch)                       # MySQL problem
+      end
       assert_equal([-9223372036854775808], @s.fetch)
       assert_equal([9223372036854775807], @s.fetch)
     end
@@ -809,16 +884,20 @@ class TC_MysqlStmt2 < Test::Unit::TestCase
       @s.prepare("select i from t")
       @s.execute
       assert_equal([0], @s.fetch)
-      assert_equal([-1], @s.fetch)                   # MySQL & MySQL/Ruby problem
-      assert_equal([9223372036854775807], @s.fetch)
-      if @m.server_version < 50000 then
-        assert_equal([-9223372036854775808], @s.fetch) # MySQL problem
-      else
+      if @m.server_version >= 50000 then
         assert_equal([0], @s.fetch)
+      else
+        assert_equal([18446744073709551615], @s.fetch) # MySQL problem
       end
-      assert_equal([-1], @s.fetch)                   # MySQL/Ruby problem
+      assert_equal([9223372036854775807], @s.fetch)
+      if @m.server_version >= 50000 then
+        assert_equal([0], @s.fetch)
+      else
+        assert_equal([9223372036854775808], @s.fetch) # MySQL problem
+      end
+      assert_equal([18446744073709551615], @s.fetch)
       assert_equal([0], @s.fetch)
-      assert_equal([-1], @s.fetch)                   # MySQL/Ruby problem
+      assert_equal([18446744073709551615], @s.fetch)
     end
   end
 
@@ -857,12 +936,10 @@ class TC_MysqlStmt2 < Test::Unit::TestCase
       @s.prepare("select i from t")
       @s.execute
       assert_equal([0], @s.fetch)
-      assert_equal(-Float::MAX, @s.fetch[0])
-      if Mysql.client_version <= 40109 then  # higher version has bug
-        assert_equal(-Float::MIN, @s.fetch[0])
-        assert_equal(Float::MIN, @s.fetch[0])
-        assert_equal(Float::MAX, @s.fetch[0])
-      end
+      assert_in_delta(-Float::MAX, @s.fetch[0], Float::EPSILON)
+      assert_in_delta(-Float::MIN, @s.fetch[0], Float::EPSILON)
+      assert_in_delta(Float::MIN, @s.fetch[0], Float::EPSILON)
+      assert_in_delta(Float::MAX, @s.fetch[0], Float::EPSILON)
     end
   end
 
@@ -874,11 +951,9 @@ class TC_MysqlStmt2 < Test::Unit::TestCase
       @s.execute
       assert_equal([0], @s.fetch)
       assert_equal([0], @s.fetch)
-      if Mysql.client_version <= 40109 then  # higher version has bug
-        assert_equal([0], @s.fetch)
-        assert_equal(Float::MIN, @s.fetch[0])
-        assert_equal(Float::MAX, @s.fetch[0])
-      end
+      assert_equal([0], @s.fetch)
+      assert_in_delta(Float::MIN, @s.fetch[0], Float::EPSILON)
+      assert_in_delta(Float::MAX, @s.fetch[0], Float::EPSILON)
     end
   end
 
@@ -943,11 +1018,11 @@ class TC_MysqlStmt2 < Test::Unit::TestCase
   def test_fetch_timestamp()
     if @m.server_version >= 40100 then
       @m.query("create temporary table t (i timestamp)")
-      @m.query("insert into t values ('1970-01-01 12:00:00'),('2037-12-31 23:59:59')")
+      @m.query("insert into t values ('1970-01-02 00:00:00'),('2037-12-30 23:59:59')")
       @s.prepare("select i from t")
       @s.execute
-      assert_equal([Mysql::Time.new(1970,1,1,12,0,0)], @s.fetch)
-      assert_equal([Mysql::Time.new(2037,12,31,23,59,59)], @s.fetch)
+      assert_equal([Mysql::Time.new(1970,1,2,0,0,0)], @s.fetch)
+      assert_equal([Mysql::Time.new(2037,12,30,23,59,59)], @s.fetch)
     end
   end
 
@@ -1006,7 +1081,11 @@ class TC_MysqlStmt2 < Test::Unit::TestCase
       @s.prepare("select i from t")
       @s.execute
       assert_equal([nil], @s.fetch)
-      assert_equal(["abc"], @s.fetch)
+      if @m.server_version >= 50000 then
+        assert_equal(["abc\0\0\0\0\0\0\0"], @s.fetch)
+      else
+        assert_equal(["abc"], @s.fetch)
+      end
     end
   end
 
@@ -1246,6 +1325,14 @@ class TC_MysqlStmt2 < Test::Unit::TestCase
     end
   end
 
+  def test_result_metadata_nodata()
+    if @m.server_version >= 40100 then
+      @m.query("create temporary table t (i int)")
+      @s.prepare("insert into t values (1)")
+      assert_equal(nil, @s.result_metadata())
+    end
+  end
+
   def test_row_seek_tell()
     if @m.server_version >= 40100 then
       @m.query("create temporary table t (i int)")
@@ -1277,7 +1364,11 @@ class TC_MysqlStmt2 < Test::Unit::TestCase
   def test_sqlstate()
     if @m.server_version >= 40100 then
       @s.prepare("select 1")
-      assert_equal("", @s.sqlstate)
+      if @m.client_version >= 50000 then
+        assert_equal("00000", @s.sqlstate)
+      else
+        assert_equal("", @s.sqlstate)
+      end
       assert_raises(Mysql::Error){@s.prepare("hogehoge")}
       assert_equal("42000", @s.sqlstate)
     end
@@ -1288,7 +1379,7 @@ class TC_MysqlStmt2 < Test::Unit::TestCase
     @s.store_result()
   end
 =end
-  
+
 end if Mysql.client_version >= 40100
 
 class TC_MysqlTime < Test::Unit::TestCase

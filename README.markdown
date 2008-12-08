@@ -1,7 +1,7 @@
-MySQL/Ruby 2.7.1
-================
+MySQL/Ruby
+==========
 
-This is a the classic Ruby C wrapper for MySQL repackaged as a gem which will build without passing any extra parameters on many system.
+This is a the classic Ruby C wrapper for MySQL (v.2.8) repackaged as a gem which will build without passing any extra parameters on many system.
 It relies on the availability in path of the right `mysql_config` executable.
 
 Installation
