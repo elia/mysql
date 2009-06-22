@@ -1,5 +1,5 @@
 /*	ruby mysql module
- *	$Id: mysql.c 232 2008-08-19 14:48:50Z tommy $
+ *	$Id: mysql.c 244 2009-02-01 08:43:39Z tommy $
  */
 
 #include <ruby.h>
@@ -8,6 +8,9 @@
 #endif
 #ifndef RSTRING_LEN
 #define RSTRING_LEN(str) RSTRING(str)->len
+#endif
+#ifndef RARRAY_PTR
+#define RARRAY_PTR(ary) RARRAY(ary)->ptr
 #endif
 #ifndef HAVE_RB_STR_SET_LEN
 #define rb_str_set_len(str, length) (RSTRING_LEN(str) = (length))
@@ -23,7 +26,7 @@
 #include <mysql/mysqld_error.h>
 #endif
 
-#define MYSQL_RUBY_VERSION 20800
+#define MYSQL_RUBY_VERSION 20801
 
 #define GC_STORE_RESULT_LIMIT 20
 
@@ -248,7 +251,9 @@ static VALUE real_connect(int argc, VALUE* argv, VALUE klass)
     pp = NILorINT(port);
     s = NILorSTRING(sock);
 
+#ifdef HAVE_RB_THREAD_START_TIMER
     rb_thread_stop_timer();
+#endif
     obj = Data_Make_Struct(klass, struct mysql, 0, free_mysql, myp);
 #if MYSQL_VERSION_ID >= 32200
     mysql_init(&myp->handler);
@@ -259,10 +264,14 @@ static VALUE real_connect(int argc, VALUE* argv, VALUE klass)
     if (mysql_real_connect(&myp->handler, h, u, p, pp, s) == NULL)
 #endif
     {
+#ifdef HAVE_RB_THREAD_START_TIMER
         rb_thread_start_timer();
+#endif
         mysql_raise(&myp->handler);
     }
+#ifdef HAVE_RB_THREAD_START_TIMER
     rb_thread_start_timer();
+#endif
 
     myp->handler.reconnect = 0;
     myp->connection = Qtrue;
@@ -326,12 +335,18 @@ static VALUE real_connect2(int argc, VALUE* argv, VALUE obj)
     pp = NILorINT(port);
     s = NILorSTRING(sock);
 
+#ifdef HAVE_RB_THREAD_START_TIMER
     rb_thread_stop_timer();
+#endif
     if (mysql_real_connect(m, h, u, p, d, pp, s, f) == NULL) {
+#ifdef HAVE_RB_THREAD_START_TIMER
         rb_thread_start_timer();
+#endif
         mysql_raise(m);
     }
+#ifdef HAVE_RB_THREAD_START_TIMER
     rb_thread_start_timer();
+#endif
     m->reconnect = 0;
     GetMysqlStruct(obj)->connection = Qtrue;
 
@@ -1387,19 +1402,21 @@ static VALUE stmt_execute(int argc, VALUE *argv, VALUE obj)
                     VALUE a = rb_funcall(argv[i], rb_intern("to_a"), 0);
                     s->param.bind[i].buffer_type = MYSQL_TYPE_DATETIME;
                     s->param.bind[i].buffer = &(s->param.buffer[i]);
+                    memset(&t, 0, sizeof(t));    /* avoid warning */
                     t.second_part = 0;
                     t.neg = 0;
-                    t.second = FIX2INT(RARRAY(a)->ptr[0]);
-                    t.minute = FIX2INT(RARRAY(a)->ptr[1]);
-                    t.hour = FIX2INT(RARRAY(a)->ptr[2]);
-                    t.day = FIX2INT(RARRAY(a)->ptr[3]);
-                    t.month = FIX2INT(RARRAY(a)->ptr[4]);
-                    t.year = FIX2INT(RARRAY(a)->ptr[5]);
+                    t.second = FIX2INT(RARRAY_PTR(a)[0]);
+                    t.minute = FIX2INT(RARRAY_PTR(a)[1]);
+                    t.hour = FIX2INT(RARRAY_PTR(a)[2]);
+                    t.day = FIX2INT(RARRAY_PTR(a)[3]);
+                    t.month = FIX2INT(RARRAY_PTR(a)[4]);
+                    t.year = FIX2INT(RARRAY_PTR(a)[5]);
                     *(MYSQL_TIME*)&(s->param.buffer[i]) = t;
                 } else if (CLASS_OF(argv[i]) == cMysqlTime) {
                     MYSQL_TIME t;
                     s->param.bind[i].buffer_type = MYSQL_TYPE_DATETIME;
                     s->param.bind[i].buffer = &(s->param.buffer[i]);
+                    memset(&t, 0, sizeof(t));    /* avoid warning */
                     t.second_part = 0;
                     t.neg = 0;
                     t.second = NUM2INT(rb_iv_get(argv[i], "second"));

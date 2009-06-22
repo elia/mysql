@@ -3,22 +3,8 @@ require 'mkmf'
 if /mswin32/ =~ RUBY_PLATFORM
   inc, lib = dir_config('mysql')
   exit 1 unless have_library("libmysql")
-
-elsif mc = with_config('mysql-config') or
-      not((mysql_config_path = `which mysql_config`.chomp).empty?) and 
-      File.exists?(mysql_config_path) then
-  
-  mc = 'mysql_config' if mc == true or not(mysql_config_path.empty?)
-  
-  cflags = `#{mc} --cflags`.chomp
-  exit 1 if $? != 0
-  libs = `#{mc} --libs`.chomp
-  exit 1 if $? != 0
-  $CPPFLAGS += ' ' + cflags
-  $libs = libs + " " + $libs
-elsif not((mysql_config_path = `which mysql_config`.chomp).empty?) and 
-      File.exists?(mysql_config_path)
-  mc = 'mysql_config'
+elsif mc = with_config('mysql-config') then
+  mc = 'mysql_config' if mc == true
   cflags = `#{mc} --cflags`.chomp
   exit 1 if $? != 0
   libs = `#{mc} --libs`.chomp
@@ -36,6 +22,7 @@ end
 
 have_func('mysql_ssl_set')
 have_func('rb_str_set_len')
+have_func('rb_thread_start_timer')
 
 if have_header('mysql.h') then
   src = "#include <errmsg.h>\n#include <mysqld_error.h>\n"
