@@ -1,9 +1,13 @@
+#!/usr/bin/env ruby
+# coding: utf-8
+
 require 'mkmf'
 
 if /mswin32/ =~ RUBY_PLATFORM
   inc, lib = dir_config('mysql')
   exit 1 unless have_library("libmysql")
-elsif mc = with_config('mysql-config') then
+elsif mc = with_config('mysql-config') or
+      mc = `which mysql_config`.chomp and not(mc.empty?)
   mc = 'mysql_config' if mc == true
   cflags = `#{mc} --cflags`.chomp
   exit 1 if $? != 0
